@@ -1,0 +1,13 @@
+node_modules
+dist
+.git
+.unitask
+*.log
+.DS_Store
+.env
+docs
+README.md
+LICENSE
+scripts
+.github
+Dockerfile*

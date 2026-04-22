@@ -1,0 +1,39 @@
+{
+  "name": "unitask",
+  "version": "0.4.0",
+  "description": "MCP server + CLI for secure code execution. Every call boots a fresh unikernel under declarative policy and is destroyed on exit.",
+  "type": "module",
+  "bin": {
+    "unitask": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/cli.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "smoke": "npm run build && vitest run --config vitest.smoke.config.ts",
+    "prepublishOnly": "npm run build"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "commander": "^12.1.0",
+    "smol-toml": "^1.6.1",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@vitest/expect": "^4.1.5",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^4.1.5"
+  },
+  "license": "MIT"
+}

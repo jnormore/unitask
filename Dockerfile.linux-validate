@@ -1,0 +1,51 @@
+# Linux validation image for unitask. Boots a Nanos unikernel inside a
+# container — used to confirm that the v0.4 code paths work on Linux.
+#
+# KVM is typically unavailable inside Docker Desktop containers (the host's
+# /dev/kvm isn't passed through), so QEMU will fall back to TCG software
+# emulation. That's slow per run but proves the code paths.
+#
+# Build:   docker build -f Dockerfile.linux-validate -t unitask-linux .
+# Run:     docker run --rm -it unitask-linux
+# Inside:  unitask doctor
+#          unitask run --code 'console.log("hello from linux")'
+
+FROM node:20-bookworm
+
+# QEMU + netcat + curl. qemu-system-arm provides qemu-system-aarch64 on debian.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        qemu-system-arm \
+        qemu-system-x86 \
+        ca-certificates \
+        curl \
+        netcat-openbsd \
+        sudo \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install ops as the non-root user, since ops writes to $HOME/.ops.
+RUN useradd -ms /bin/bash unitask && echo "unitask ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+USER unitask
+WORKDIR /home/unitask
+
+# Install ops. The script wants to write to $HOME/.ops.
+RUN curl -sSfL https://ops.city/get.sh | sh -s --
+
+ENV PATH="/home/unitask/.ops/bin:${PATH}"
+
+# Pre-pull the Nanos node package so first run is fast.
+RUN ops pkg get eyberg/node:20.5.0 || true
+
+# Copy unitask source. .dockerignore handles excludes.
+COPY --chown=unitask:unitask package.json package-lock.json tsconfig.json ./
+RUN npm ci
+COPY --chown=unitask:unitask src ./src
+COPY --chown=unitask:unitask tests ./tests
+COPY --chown=unitask:unitask vitest.config.ts vitest.smoke.config.ts ./
+RUN npm run build
+
+# Symlink the built CLI so `unitask` works on PATH.
+RUN sudo ln -s /home/unitask/dist/cli.js /usr/local/bin/unitask \
+    && sudo chmod +x /home/unitask/dist/cli.js
+
+CMD ["bash"]
