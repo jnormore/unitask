@@ -27,10 +27,16 @@ const NODE_PACKAGE = "eyberg/node:20.5.0";
 // 1. A minimal proxied fetch() that tunnels via HTTP CONNECT if HTTPS_PROXY
 //    is set (since Node 20's built-in fetch doesn't honor the env var and
 //    `require('undici')` isn't available in the Nanos Node image).
-// 2. A net.connect/net.createConnection/Socket.prototype.connect override that
-//    consults UNITASK_TCP_MAP to redirect allowed (host:port) -> virtual
-//    in-VM addresses that QEMU's guestfwd bridges back to the real upstream.
-// 3. An exit marker so unitask can recover the worker's real exit code
+// 2. A tunneling https.globalAgent so https.request / https.get and any
+//    library that uses Node's built-in https module (axios, got, undici-
+//    free clients, follow-redirects, …) transparently CONNECT-tunnel
+//    through HTTPS_PROXY. Without this, legacy HTTPS code skips the proxy
+//    and tries direct DNS, which fails inside the locked-down guest.
+// 3. A net.connect/net.createConnection/Socket.prototype.connect override
+//    that consults UNITASK_TCP_MAP to redirect allowed (host:port) ->
+//    virtual in-VM addresses that QEMU's guestfwd bridges back to the
+//    real upstream.
+// 4. An exit marker so unitask can recover the worker's real exit code
 //    across the QEMU boundary.
 const HARNESS = `(() => {
   // --- stderr redirect via tagged stdout ---
@@ -264,6 +270,79 @@ const HARNESS = `(() => {
   };
 
   globalThis.fetch = doProxiedFetch;
+})();
+(() => {
+  // --- proxied https.request via globalAgent (--allow-net) ---
+  // Node's built-in https module does NOT honor HTTPS_PROXY. Libraries
+  // that call https.request / https.get directly (axios, got, follow-
+  // redirects, the plain Node API, ...) would bypass the proxy and hit
+  // DNS in the guest, which has no resolver. Patch https.globalAgent
+  // with a tunneling Agent that CONNECTs through HTTPS_PROXY and hands
+  // back a TLS socket. The proxy enforces the --allow-net allowlist on
+  // the host side, so this respects the policy.
+  //
+  // Plain http.request via proxy is intentionally left alone: it'd need
+  // absolute-form URI rewriting in the request line, which is messy and
+  // rarely worth it (real APIs are HTTPS). Plain HTTP egress goes
+  // through fetch() above, which writes absolute-form URIs explicitly.
+  const proxy = process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
+  if (!proxy) return;
+  const httpsMod = require('node:https');
+  const tlsMod = require('node:tls');
+  const netMod = require('node:net');
+  const proxyUrl = new URL(proxy);
+  const proxyHost = proxyUrl.hostname;
+  const proxyPort = parseInt(proxyUrl.port, 10) || 8080;
+
+  class TunnelingHttpsAgent extends httpsMod.Agent {
+    createConnection(opts, cb) {
+      const targetHost = opts.host || opts.hostname;
+      const targetPort = opts.port || 443;
+      const target = targetHost + ':' + targetPort;
+      const sock = netMod.connect({ host: proxyHost, port: proxyPort });
+      let bufs = [];
+      let bytes = 0;
+      const onData = (chunk) => {
+        bufs.push(chunk);
+        bytes += chunk.length;
+        const buf = Buffer.concat(bufs, bytes);
+        const idx = buf.indexOf(Buffer.from('\\r\\n\\r\\n'));
+        if (idx === -1) return;
+        sock.removeListener('data', onData);
+        const head = buf.slice(0, idx).toString('ascii');
+        const m = /^HTTP\\/[0-9.]+ (\\d+)/.exec(head);
+        const status = m ? parseInt(m[1], 10) : 0;
+        if (status !== 200) {
+          sock.destroy();
+          cb(new Error('proxy CONNECT to ' + target + ' returned ' + status));
+          return;
+        }
+        const tlsSock = tlsMod.connect({
+          socket: sock,
+          host: targetHost,
+          servername: opts.servername || targetHost,
+          ALPNProtocols: ['http/1.1'],
+          rejectUnauthorized: opts.rejectUnauthorized !== false,
+        }, () => cb(null, tlsSock));
+        tlsSock.once('error', cb);
+      };
+      sock.on('data', onData);
+      sock.once('error', cb);
+      sock.once('connect', () => {
+        sock.write(
+          'CONNECT ' + target + ' HTTP/1.1\\r\\n' +
+          'Host: ' + target + '\\r\\n' +
+          '\\r\\n'
+        );
+      });
+    }
+  }
+
+  // keepAlive=false: fresh tunnel per request. Simpler reasoning around
+  // proxy enforcement (one allowlist check per upstream connection),
+  // matches the proxied-fetch behavior, and avoids holding open CONNECT
+  // tunnels that the host proxy may not pool.
+  httpsMod.globalAgent = new TunnelingHttpsAgent({ keepAlive: false });
 })();
 process.on('exit', (code) => {
   try { process.stdout.write('\\n[__unitask_exit__:' + (code == null ? 0 : code) + ']\\n'); } catch {}

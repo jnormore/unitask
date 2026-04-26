@@ -65,6 +65,30 @@ describe("smoke: unitask end-to-end", () => {
     expect(code).toBe(0);
   });
 
+  it("https.get reaches the allowed host via the tunneling globalAgent", async () => {
+    // Pins the contract: legacy code that uses Node's built-in https
+    // module (not fetch) tunnels through HTTPS_PROXY transparently.
+    // Without globalAgent patching this fails with EAI_AGAIN — the
+    // guest has no DNS, and the request never goes through the proxy.
+    const { stdout, code } = await runUnitask([
+      "run",
+      "--allow-net",
+      "api.github.com",
+      "--code",
+      `const https = require('node:https');
+       https.get('https://api.github.com/zen', { headers: { 'User-Agent': 'unitask-smoke' } }, (res) => {
+         let data = '';
+         res.on('data', (c) => data += c);
+         res.on('end', () => console.log('STATUS_' + res.statusCode + ' BODY_LEN=' + data.length));
+       }).on('error', (e) => console.log('FAIL:', e.code || e.message));`,
+      "--timeout",
+      "30",
+    ]);
+    expect(stdout).toContain("STATUS_200");
+    expect(stdout).not.toContain("FAIL:");
+    expect(code).toBe(0);
+  });
+
   it("negotiates HTTP/2 via ALPN when the origin supports it", async () => {
     const { stdout, code } = await runUnitask([
       "run",
