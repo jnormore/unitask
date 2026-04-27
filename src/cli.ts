@@ -84,7 +84,14 @@ program
       envs: opts.env ?? [],
       json: opts.json,
     });
-    process.exit(exit);
+    // Use `process.exitCode` rather than `process.exit()` everywhere
+    // in this file. process.exit() is synchronous and discards anything
+    // still queued in process.stdout/stderr's user-space buffer. When
+    // unitask's stdout is a pipe (e.g. cue's daemon spawning unitask),
+    // those streams are async — large writes (>~8KB pipe page on macOS)
+    // chunk on the way out. Setting exitCode lets the event loop drain
+    // the buffers before Node terminates naturally.
+    process.exitCode = exit;
   });
 
 program
@@ -92,16 +99,14 @@ program
   .description("Show a past run's code, policy, and output.")
   .argument("<run-id>", "the run id returned by `unitask run`")
   .action(async (runId: string) => {
-    const exit = await inspectCommand(runId);
-    process.exit(exit);
+    process.exitCode = await inspectCommand(runId);
   });
 
 program
   .command("doctor")
   .description("Check that all prerequisites are installed and working.")
   .action(async () => {
-    const exit = await doctorCommand();
-    process.exit(exit);
+    process.exitCode = await doctorCommand();
   });
 
 const mcp = program
@@ -111,8 +116,7 @@ const mcp = program
       "(Claude Desktop, Claude Code, Cursor, …) execute code in a unikernel."
   )
   .action(async () => {
-    const exit = await mcpServeCommand();
-    process.exit(exit);
+    process.exitCode = await mcpServeCommand();
   });
 
 mcp
@@ -122,12 +126,11 @@ mcp
   )
   .argument("[client]", "claude-desktop | claude-code | cursor | vscode-copilot")
   .action(async (client: string | undefined) => {
-    const exit = await mcpConfigCommand(client);
-    process.exit(exit);
+    process.exitCode = await mcpConfigCommand(client);
   });
 
 program.parseAsync(process.argv).catch((err: unknown) => {
   const msg = err instanceof Error ? err.message : String(err);
   process.stderr.write(`error: ${msg}\n`);
-  process.exit(1);
+  process.exitCode = 1;
 });
