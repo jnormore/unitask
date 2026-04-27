@@ -32,9 +32,15 @@ export type ExecutionPolicy = {
    *  127.0.0.1:5432 to reach a service running on the host. */
   allowedTcp: TcpTarget[];
   allowInternet: boolean;
-  /** Resolved secrets (name + value). The value is injected as an env var into
-   *  the worker; only the name is persisted to the run record. */
+  /** Resolved secrets (name + value). The value is injected as an env var
+   *  into the worker, REDACTED from captured stdout/stderr, and only the
+   *  name is persisted to the run record. */
   secrets: ResolvedSecret[];
+  /** Resolved non-sensitive env vars (name + value). Same env injection as
+   *  secrets, but values are NOT redacted from output and the name+value
+   *  pair is fine to log. Use for URLs, thresholds, recipient addresses,
+   *  channel names — anything the operator benefits from being able to see. */
+  envs: ResolvedSecret[];
 };
 
 export type RunResult = {

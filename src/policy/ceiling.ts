@@ -18,6 +18,7 @@ export type PolicyCeiling = {
   allowNet?: string[];
   allowTcp?: string[];
   secrets?: string[];
+  envs?: string[];
   /** Path prefixes (must match a request file path's startsWith). */
   filesUnder?: string[];
   /** Path prefixes (must match a request dir path's startsWith). */
@@ -37,6 +38,7 @@ export type PolicyDenials = {
   allowNet?: string[];
   allowTcp?: string[];
   secrets?: string[];
+  envs?: string[];
   files?: string[];
   dirs?: string[];
 };
@@ -95,6 +97,16 @@ export function applyCeiling(
     });
     if (dropped.length > 0) denials.secrets = dropped;
   }
+  if (ceiling.envs != null) {
+    const allowed = new Set(ceiling.envs);
+    const dropped: string[] = [];
+    out.envs = (req.envs ?? []).filter((e) => {
+      if (allowed.has(e)) return true;
+      dropped.push(e);
+      return false;
+    });
+    if (dropped.length > 0) denials.envs = dropped;
+  }
 
   // File/dir paths: must startsWith one of the ceiling prefixes (after path
   // normalization to abs). Non-matching paths are dropped from the request.
@@ -143,6 +155,7 @@ export function hasAnyDenials(d: PolicyDenials): boolean {
     (d.allowNet?.length ?? 0) > 0 ||
     (d.allowTcp?.length ?? 0) > 0 ||
     (d.secrets?.length ?? 0) > 0 ||
+    (d.envs?.length ?? 0) > 0 ||
     (d.files?.length ?? 0) > 0 ||
     (d.dirs?.length ?? 0) > 0
   );
@@ -156,6 +169,7 @@ export function summarizeDenials(d: PolicyDenials): string {
   if (d.allowNet?.length) parts.push(`allow-net dropped: ${d.allowNet.join(", ")}`);
   if (d.allowTcp?.length) parts.push(`allow-tcp dropped: ${d.allowTcp.join(", ")}`);
   if (d.secrets?.length) parts.push(`secrets dropped: ${d.secrets.join(", ")}`);
+  if (d.envs?.length) parts.push(`envs dropped: ${d.envs.join(", ")}`);
   if (d.files?.length) parts.push(`files dropped: ${d.files.join(", ")}`);
   if (d.dirs?.length) parts.push(`dirs dropped: ${d.dirs.join(", ")}`);
   return parts.join("; ");

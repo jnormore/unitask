@@ -493,6 +493,12 @@ export class NanosRuntime implements SandboxRuntime {
       for (const s of policy.secrets) {
         extraEnv[s.name] = s.value;
       }
+      // Configs ("envs") share the same env-var injection channel as
+      // secrets — the difference is purely about whether output is
+      // redacted (secrets are; envs are not). See redactSecrets call below.
+      for (const e of policy.envs) {
+        extraEnv[e.name] = e.value;
+      }
 
       await buildImage({
         codeFile: codePath,

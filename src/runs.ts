@@ -50,6 +50,8 @@ export async function writeRunRecord(record: RunRecord): Promise<string> {
   await writeFile(join(dir, "code.js"), record.spec.code, "utf8");
 
   // Strip secret values so they never land on disk; only names persist.
+  // Envs are non-sensitive — we record name+value, since the run record
+  // is meant to be auditable and configs are part of the audit trail.
   const effectivePolicy = {
     timeoutSeconds: record.policy.timeoutSeconds,
     memoryMb: record.policy.memoryMb,
@@ -57,6 +59,7 @@ export async function writeRunRecord(record: RunRecord): Promise<string> {
     allowedTcp: record.policy.allowedTcp,
     allowInternet: record.policy.allowInternet,
     secrets: record.policy.secrets.map((s) => ({ name: s.name })),
+    envs: record.policy.envs.map((e) => ({ name: e.name, value: e.value })),
   };
 
   // Caller-requested policy (pre-ceiling). Same redaction applied.
@@ -69,6 +72,7 @@ export async function writeRunRecord(record: RunRecord): Promise<string> {
         files: record.requestedPolicyInput.files ?? [],
         dirs: record.requestedPolicyInput.dirs ?? [],
         secrets: record.requestedPolicyInput.secrets ?? [],
+        envs: record.requestedPolicyInput.envs ?? [],
       }
     : undefined;
 

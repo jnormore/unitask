@@ -21,8 +21,12 @@ export type ExecuteInput = {
   files?: string[];
   /** Host directory paths to inject (recursively, read-only) at /<basename>/. */
   dirs?: string[];
-  /** Env-var names to resolve from the caller's process.env and inject. */
+  /** Env-var names whose values are SENSITIVE — resolved from process.env,
+   *  injected, redacted from output, only the name is persisted. */
   secrets?: string[];
+  /** Env-var names whose values are NOT sensitive — resolved from
+   *  process.env, injected, NOT redacted, name+value persisted. */
+  envs?: string[];
   /** Wall-clock timeout in seconds. */
   timeoutSeconds?: number;
   /** Memory cap in MB. */
@@ -89,9 +93,11 @@ export async function execute(input: ExecuteInput): Promise<ExecuteOutput> {
   const files = effective.files ?? [];
   const dirs = effective.dirs ?? [];
   const secretNames = effective.secrets ?? [];
+  const envNames = effective.envs ?? [];
 
   const allowedTcp: TcpTarget[] = allowTcpRaw.map(parseTcpTarget);
-  const resolvedSecrets: ResolvedSecret[] = resolveSecrets(secretNames);
+  const resolvedSecrets: ResolvedSecret[] = resolveEnvVars(secretNames, "secret");
+  const resolvedEnvs: ResolvedSecret[] = resolveEnvVars(envNames, "env");
 
   const spec: WorkerSpec = {
     language: "node",
@@ -107,6 +113,7 @@ export async function execute(input: ExecuteInput): Promise<ExecuteOutput> {
     allowedTcp,
     allowInternet: allowNet.length > 0 || allowedTcp.length > 0,
     secrets: resolvedSecrets,
+    envs: resolvedEnvs,
   };
 
   const ceilingMeta: CeilingMeta | undefined = loadedCeiling
@@ -166,17 +173,24 @@ export function parseTcpTarget(raw: string): TcpTarget {
 }
 
 export function resolveSecrets(names: string[]): ResolvedSecret[] {
+  return resolveEnvVars(names, "secret");
+}
+
+export function resolveEnvVars(
+  names: string[],
+  kind: "secret" | "env",
+): ResolvedSecret[] {
   const out: ResolvedSecret[] = [];
   for (const name of names) {
     if (!/^[A-Z_][A-Z0-9_]*$/.test(name)) {
       throw new UnitaskInputError(
-        `secret ${name}: must be an uppercase env-var name (matching /^[A-Z_][A-Z0-9_]*$/)`
+        `${kind} ${name}: must be an uppercase env-var name (matching /^[A-Z_][A-Z0-9_]*$/)`
       );
     }
     const value = process.env[name];
     if (value == null || value === "") {
       throw new UnitaskInputError(
-        `secret ${name}: env var ${name} is not set on the host`
+        `${kind} ${name}: env var ${name} is not set on the host`
       );
     }
     out.push({ name, value });

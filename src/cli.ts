@@ -33,7 +33,7 @@ program
   )
   .option(
     "--allow-net <host>",
-    "allow HTTP/HTTPS egress to the given hostname (repeatable). default: no network.",
+    "allow HTTP/HTTPS egress to the given hostname (repeatable). default: no network. pass '*' as the host to allow any destination — escape hatch for code that fetches user-supplied URLs across arbitrary domains.",
     (host: string, prev: string[]) => prev.concat([host]),
     [] as string[]
   )
@@ -57,7 +57,13 @@ program
   )
   .option(
     "--secret <NAME>",
-    "inject env var NAME from the host into the unikernel (repeatable). value never persisted to the run record.",
+    "inject env var NAME from the host into the unikernel (repeatable). value never persisted to the run record. value is REDACTED from captured stdout/stderr — pick this for credentials, signing keys, tokens.",
+    (name: string, prev: string[]) => prev.concat([name]),
+    [] as string[]
+  )
+  .option(
+    "--env <NAME>",
+    "inject env var NAME from the host into the unikernel (repeatable). value is NOT redacted from output and IS persisted to the run record — pick this for non-sensitive runtime config (URLs, thresholds, channel names, recipient addresses).",
     (name: string, prev: string[]) => prev.concat([name]),
     [] as string[]
   )
@@ -75,6 +81,7 @@ program
       files: opts.file ?? [],
       dirs: opts.dir ?? [],
       secrets: opts.secret ?? [],
+      envs: opts.env ?? [],
       json: opts.json,
     });
     process.exit(exit);

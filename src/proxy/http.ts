@@ -27,10 +27,19 @@ export type RunningHttpProxy = {
 export async function startHttpProxy(
   opts: HttpProxyOptions
 ): Promise<RunningHttpProxy> {
-  const allow = new Set(opts.allowlist.map((h) => h.toLowerCase()));
+  // `*` in the allowlist means "any host" — the deliberate escape
+  // hatch for actions that fetch user-supplied URLs across arbitrary
+  // domains (e.g. an RSS reader, a link summarizer, a user-paste
+  // monitor). Detect once, then short-circuit the per-request lookup.
+  // Any literal hostname entries are still respected for the non-`*`
+  // case.
+  const allowAny = opts.allowlist.includes("*");
+  const allow = new Set(
+    opts.allowlist.filter((h) => h !== "*").map((h) => h.toLowerCase())
+  );
 
   const server: Server = createServer((client: Socket) => {
-    handleConnection(client, allow, opts.onLog).catch(() => {
+    handleConnection(client, allow, allowAny, opts.onLog).catch(() => {
       try {
         client.destroy();
       } catch {}
@@ -60,6 +69,7 @@ export async function startHttpProxy(
 async function handleConnection(
   client: Socket,
   allow: Set<string>,
+  allowAny: boolean,
   onLog: (e: HttpProxyLogEntry) => void
 ): Promise<void> {
   const start = Date.now();
@@ -104,7 +114,7 @@ async function handleConnection(
     return;
   }
 
-  const allowed = allow.has(parsed.host.toLowerCase());
+  const allowed = allowAny || allow.has(parsed.host.toLowerCase());
   if (!allowed) {
     onLog({
       ts: new Date().toISOString(),

@@ -63,13 +63,14 @@ export function parsePolicyToml(text: string, sourcePath: string): PolicyCeiling
       case "allowNet":
       case "allowTcp":
       case "secrets":
+      case "envs":
       case "filesUnder":
       case "dirsUnder":
         out[key] = expectStringArray(key, value, sourcePath);
         break;
       default:
         throw new Error(
-          `${sourcePath}: unknown policy field '${key}'. Allowed: memoryMb, timeoutSeconds, allowNet, allowTcp, secrets, filesUnder, dirsUnder.`
+          `${sourcePath}: unknown policy field '${key}'. Allowed: memoryMb, timeoutSeconds, allowNet, allowTcp, secrets, envs, filesUnder, dirsUnder.`
         );
     }
   }

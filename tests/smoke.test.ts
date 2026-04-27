@@ -126,6 +126,29 @@ describe("smoke: unitask end-to-end", () => {
     expect(code).toBe(0);
   });
 
+  it("--allow-net '*' allows any host (wildcard escape hatch)", async () => {
+    // Two separate fetches to two unrelated domains. With a single
+    // literal --allow-net entry, only one would succeed; with '*' both
+    // do. This is the path agents use for code that fetches
+    // user-supplied URLs across arbitrary domains (RSS, summarizers,
+    // uptime monitors that pin against any host).
+    const { stdout, code } = await runUnitask([
+      "run",
+      "--allow-net",
+      "*",
+      "--code",
+      `await Promise.all([
+         fetch("https://api.github.com/zen").then(r => r.text()).then(t => console.log("github:", t.length > 0)),
+         fetch("https://example.com/").then(r => console.log("example:", r.status)),
+       ]);`,
+      "--timeout",
+      "30",
+    ]);
+    expect(stdout).toContain("github: true");
+    expect(stdout).toMatch(/example: 2\d\d/);
+    expect(code).toBe(0);
+  });
+
   it("separates worker stdout from worker stderr", async () => {
     const { stdout, code } = await runUnitask([
       "run",
@@ -322,6 +345,39 @@ describe("smoke: unitask end-to-end", () => {
       expect(meta).not.toContain(tokenValue);
       expect(stdoutLog).not.toContain(tokenValue);
       expect(meta).toContain('"name": "DEMO_TOKEN"');
+    }
+  });
+
+  it("--env injects env var WITHOUT redaction", async () => {
+    const url = "https://heymantle.com/path/x";
+    const { stdout, code } = await runUnitask(
+      [
+        "run",
+        "--env",
+        "MONITOR_URL",
+        "--code",
+        `console.log("the url is:", process.env.MONITOR_URL);`,
+        "--timeout",
+        "15",
+      ],
+      "any",
+      { MONITOR_URL: url }
+    );
+
+    // Worker echoed the value; output is NOT redacted (unlike --secret).
+    expect(stdout).toContain(`the url is: ${url}`);
+    expect(stdout).not.toContain("[REDACTED:MONITOR_URL]");
+    expect(code).toBe(0);
+
+    // The on-disk run record stores the value (configs are non-sensitive
+    // and benefit from being part of the audit trail).
+    const runIdMatch = /run id: (r_[a-f0-9]+)/.exec(stdout);
+    if (runIdMatch) {
+      const runId = runIdMatch[1]!;
+      const dir = join(homedir(), ".unitask", "runs", runId);
+      const meta = await readFile(join(dir, "meta.json"), "utf8");
+      expect(meta).toContain('"name": "MONITOR_URL"');
+      expect(meta).toContain(url);
     }
   });
 

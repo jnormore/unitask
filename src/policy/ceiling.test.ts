@@ -86,6 +86,25 @@ describe("applyCeiling — list intersection", () => {
     expect(denials.secrets).toEqual(["AWS_KEY"]);
   });
 
+  it("intersects envs by exact name (separate from secrets)", () => {
+    const { effective, denials } = applyCeiling(
+      { code: "x", envs: ["MONITOR_URL", "FORBIDDEN_CONFIG"] },
+      { envs: ["MONITOR_URL"] }
+    );
+    expect(effective.envs).toEqual(["MONITOR_URL"]);
+    expect(denials.envs).toEqual(["FORBIDDEN_CONFIG"]);
+  });
+
+  it("envs ceiling and secrets ceiling are independent", () => {
+    const { effective } = applyCeiling(
+      { code: "x", secrets: ["GH_TOKEN"], envs: ["MONITOR_URL"] },
+      { secrets: ["AWS_KEY"], envs: ["MONITOR_URL"] }
+    );
+    // Secrets request was fully intersected away, envs survived.
+    expect(effective.secrets).toEqual([]);
+    expect(effective.envs).toEqual(["MONITOR_URL"]);
+  });
+
   it("doesn't constrain a list field absent from the ceiling", () => {
     const { effective, denials } = applyCeiling(
       { code: "x", allowNet: ["anything.com"] },

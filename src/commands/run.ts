@@ -12,6 +12,7 @@ export type RunOptions = {
   files: string[];
   dirs: string[];
   secrets: string[];
+  envs: string[];
   json: boolean;
 };
 
@@ -50,6 +51,9 @@ export async function runCommand(opts: RunOptions): Promise<number> {
     if (opts.secrets.length > 0) {
       process.stderr.write(`• secrets: ${opts.secrets.join(", ")}\n`);
     }
+    if (opts.envs.length > 0) {
+      process.stderr.write(`• envs: ${opts.envs.join(", ")}\n`);
+    }
     process.stderr.write(`• building image and booting unikernel...\n`);
   }
 
@@ -63,6 +67,7 @@ export async function runCommand(opts: RunOptions): Promise<number> {
       files: opts.files,
       dirs: opts.dirs,
       secrets: opts.secrets,
+      envs: opts.envs,
       timeoutSeconds: opts.timeout,
       memoryMb: opts.memory,
     });
